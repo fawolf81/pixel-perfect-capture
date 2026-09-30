@@ -263,7 +263,7 @@ function gerarLances(A, B, ini, fim, placar){
     const r = Math.random();
     if(r < 0.62){                                   // chance de gol
       const pAta = forcaSetor(at,"ata")*1.05, pDef = forcaSetor(df,"def");
-      const pGol = 0.30 * (pAta/(pAta+pDef)) * 2;
+      const pGol = 0.30 * (pAta/(pAta+pDef));
       if(Math.random() < pGol){
         const g = sorteiaGoleador(at); g.gols++;
         placar[lado]++;
@@ -307,7 +307,7 @@ function simularRapido(A, B){
   const fA = forcaTime(A)+MANDO, fB = forcaTime(B);
   const golsDe = (f,o) => {
     const lam = clamp(1.35 * Math.pow(f/o, 2.2), 0.25, 4.2);
-    let g=0; for(let i=0;i<6;i++) if(Math.random() < lam/3) g++;
+    let g=0; for(let i=0;i<6;i++) if(Math.random() < lam/6) g++;
     return g;
   };
   return [golsDe(fA,fB), golsDe(fB,fA)];
