@@ -8,3 +8,5 @@
 > Commits you push to the connected branch sync back to Lovable and show up in
 > the editor, so keep the branch in a working state.
 <!-- LOVABLE:END -->
+
+- Authentication and plan entitlements use Lovable Cloud; gameplay stays isolated in `public/jogo.html` and receives only the resolved plan via query string, preserving the single-file game architecture.
