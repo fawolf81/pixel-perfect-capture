@@ -12,6 +12,9 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { AuthContext, type AuthState } from "../lib/auth-context";
+import { supabase } from "../integrations/supabase/client";
+import { Toaster } from "../components/ui/sonner";
 
 function NotFoundComponent() {
   return (
@@ -116,11 +119,28 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const router = useRouter();
+  const [auth, setAuth] = React.useState<AuthState>({ loading: true, user: null });
+
+  useEffect(() => {
+    let active = true;
+    void supabase.auth.getUser().then(({ data }) => {
+      if (active) setAuth({ loading: false, user: data.user ?? null });
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
+      setAuth({ loading: false, user: session?.user ?? null });
+      void router.invalidate();
+      if (event === "SIGNED_OUT") queryClient.clear();
+      else void queryClient.invalidateQueries();
+    });
+    return () => { active = false; listener.subscription.unsubscribe(); };
+  }, [queryClient, router]);
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* Required: nested routes render here. Removing <Outlet /> breaks all child routes. */}
-      <Outlet />
+      <AuthContext.Provider value={auth}><Outlet /></AuthContext.Provider>
+      <Toaster position="top-center" richColors />
     </QueryClientProvider>
   );
 }
