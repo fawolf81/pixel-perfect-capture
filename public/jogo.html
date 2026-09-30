@@ -732,7 +732,7 @@ function telaPartida(){
            <button onclick="irPara('tabela')">Ver classificação</button>`
         : P.fase==="intervalo"
           ? `<button class="pri" onclick="iniciarSegundoTempo()">Começar 2º tempo</button>
-             ${Object.keys(FORMACOES).map(f=>`<button class="peq ${P.A.id===J.meuTime?(P.A.formacao===f?'on':''):(P.B.formacao===f?'on':''}')}" onclick="formacaoIntervalo('${f}')">${f}</button>`).join("")}`
+             ${Object.keys(FORMACOES).map(f=>`<button class="peq ${meu().formacao===f?'on':''}" onclick="formacaoIntervalo('${f}')">${f}</button>`).join("")}`
           : `<button class="pri" onclick="avancar()">Avançar ${P.fase==="1t"?"":"jogo"}</button>
              <button onclick="jogarTudo()">Jogar até o fim</button>`}
     </div>
