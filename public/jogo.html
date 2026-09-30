@@ -1,0 +1,932 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Técnico Brasil — Gerenciador de Futebol</title>
+<style>
+  :root{
+    --bg:#f3f1ec; --panel:#ffffff; --line:#d9d4c9; --txt:#1d2019; --dim:#6c6f66;
+    --accent:#1c6b3a; --accent2:#c9a227; --danger:#b3321f; --ok:#1c6b3a; --row:#faf9f5;
+  }
+  html[data-tema="escuro"]{
+    --bg:#14171a; --panel:#1d2126; --line:#2d333a; --txt:#e8eaec; --dim:#98a0a8;
+    --accent:#3fa96a; --accent2:#d9b544; --danger:#e0654e; --ok:#3fa96a; --row:#22272d;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);
+    font-family:"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:16px}
+  header{position:sticky;top:0;z-index:5;background:var(--panel);
+    border-bottom:2px solid var(--line);padding:10px 12px}
+  .topo{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .marca{font-weight:800;letter-spacing:.5px}
+  .esc{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  nav{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  main{padding:12px;max-width:1080px;margin:0 auto}
+  button{font:inherit;cursor:pointer;background:var(--panel);color:var(--txt);
+    border:2px solid var(--line);border-radius:10px;padding:10px 14px;min-height:44px}
+  button:hover{border-color:var(--accent)}
+  button.pri{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:700}
+  button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  button.peq{padding:6px 10px;min-height:36px;font-size:14px}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  .card{background:var(--panel);border:2px solid var(--line);border-radius:14px;
+    padding:14px;margin-bottom:12px}
+  h1,h2,h3{margin:0 0 10px}
+  h1{font-size:22px} h2{font-size:19px} h3{font-size:16px}
+  .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{padding:7px 6px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{cursor:pointer;color:var(--dim);font-size:13px;text-transform:uppercase}
+  tbody tr:nth-child(odd){background:var(--row)}
+  .rol{overflow-x:auto}
+  .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;
+    font-weight:700;color:#fff}
+  .dim{color:var(--dim)} .num{text-align:right} .neg{color:var(--danger);font-weight:700}
+  .placar{font-size:34px;font-weight:800;text-align:center;margin:6px 0}
+  .narra{height:300px;overflow-y:auto;background:var(--row);border:2px solid var(--line);
+    border-radius:12px;padding:10px;font-size:14px;line-height:1.6}
+  .narra div{padding:3px 0;border-bottom:1px dashed var(--line)}
+  .min{display:inline-block;width:38px;font-weight:700;color:var(--dim)}
+  .g{color:var(--ok);font-weight:700} .r{color:var(--danger);font-weight:700}
+  .esq{display:grid;gap:6px}
+  .lin{display:flex;gap:6px;align-items:center;background:var(--row);
+    border:1px solid var(--line);border-radius:10px;padding:6px 8px;font-size:14px}
+  .lin b{min-width:42px}
+  .sel{outline:3px solid var(--accent2)}
+  .zt{box-shadow:inset 4px 0 0 var(--accent)}
+  .zl{box-shadow:inset 4px 0 0 #2f6fb3}
+  .zr{box-shadow:inset 4px 0 0 var(--danger)}
+  .legenda{font-size:13px;color:var(--dim);margin-top:8px}
+  .barra{height:10px;background:var(--line);border-radius:6px;overflow:hidden}
+  .barra i{display:block;height:100%;background:var(--accent)}
+  .aviso{background:var(--danger);color:#fff;border-radius:10px;padding:10px;font-weight:700}
+</style>
+</head>
+<body>
+<header>
+  <div class="topo">
+    <span class="marca">⚽ TÉCNICO BRASIL</span>
+    <span id="hdInfo" class="dim"></span>
+    <span class="esc">
+      <button class="peq" onclick="salvarJogo()">Salvar</button>
+      <button class="peq" onclick="carregarJogo()">Carregar</button>
+      <button class="peq" onclick="trocarTema()">Tema</button>
+    </span>
+  </div>
+  <nav id="nav"></nav>
+</header>
+<main id="app"></main>
+
+<script>
+/* =========================================================================
+   TÉCNICO BRASIL — jogo de gerenciamento de futebol (arquivo único)
+   Organização: 1) utilidades  2) geração de dados  3) escalação/força
+   4) simulação de partida  5) campeonato/finanças  6) interface
+   ========================================================================= */
+
+/* ---------------------------------------------------------------- 1) UTIL */
+const CHAVE_SAVE = "tecnico-brasil-v1";
+let J = null;          // objeto único de estado do jogo
+let tela = "escolha";  // tela atual
+let ui = {};           // estado temporário da interface (ordenação, seleção...)
+
+const rnd  = (a,b) => Math.floor(Math.random()*(b-a+1))+a;       // inteiro [a,b]
+const sort = arr => arr[Math.floor(Math.random()*arr.length)];    // item aleatório
+const clamp = (v,a,b) => Math.max(a,Math.min(b,v));
+const dinheiro = v => (v<0?"-":"") + "R$ " + Math.abs(Math.round(v)).toLocaleString("pt-BR");
+const esc = s => String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* -------------------------------------------------- 2) GERAÇÃO DE DADOS */
+const NOMES = ["Adilson","Ailton","Alisson","Anderson","Bruno","Caio","Cleber","Danilo",
+ "Denilson","Diego","Edinho","Éder","Elton","Emerson","Fábio","Felipe","Gabriel","Geraldo",
+ "Gilmar","Guilherme","Heitor","Hélio","Igor","Ivan","Jadson","Jonas","Juninho","Kléber",
+ "Lucas","Luan","Maicon","Marcelo","Mateus","Murilo","Nilton","Otávio","Paulinho","Pedro",
+ "Rafael","Renan","Ricardo","Robson","Rodrigo","Samuel","Thiago","Tiago","Válter","Vinícius",
+ "Wagner","Washington","Wesley","Yuri","Zeca","Arthur","Breno","Cauã","Davi","Enzo","Erick"];
+const SOBRE = ["Almeida","Alves","Andrade","Aragão","Barbosa","Barreto","Batista","Bezerra",
+ "Braga","Cardoso","Carvalho","Coelho","Correia","Costa","Cunha","Dias","Duarte","Farias",
+ "Fernandes","Ferreira","Fonseca","Freitas","Gomes","Gonçalves","Guimarães","Lima","Lopes",
+ "Macedo","Machado","Maia","Marques","Martins","Medeiros","Melo","Mendes","Moraes","Moreira",
+ "Nascimento","Neves","Nogueira","Oliveira","Pacheco","Pereira","Pinto","Queiroz","Ramos",
+ "Rezende","Ribeiro","Rocha","Rodrigues","Sampaio","Santana","Santos","Silva","Siqueira",
+ "Sousa","Tavares","Teixeira","Vasconcelos","Vieira","Xavier"];
+
+/** Gera um nome brasileiro fictício. */
+function gerarNome(){ return sort(NOMES) + " " + sort(SOBRE); }
+
+// 20 clubes fictícios: nome, apelido, cor e "tamanho" (1 pequeno a 5 gigante)
+const CLUBES = [
+ ["Atlético Serrano","SER","#1f6b3a",5],["Grêmio Litoral","LIT","#1b4f8a",5],
+ ["Real Guanabara","GUA","#8a1b2b",5],["Sport Ipiranga","IPI","#2b2b2b",4],
+ ["Cruzeiro do Vale","VAL","#2f4fa0",4],["Nacional Paulista","NPA","#b3321f",4],
+ ["União Mineira","UMI","#0f7a63",4],["Esporte Guarani Novo","GNO","#1c8f4a",3],
+ ["Rio Branco FC","RBR","#7a1f5a",3],["Tupã Atlético","TUP","#c06a12",3],
+ ["Lagoa Azul EC","LAZ","#1d7fa8",3],["Ferroviário Central","FCE","#5a3a1f",3],
+ ["Palmares Futebol","PAL","#3f7a1f",2],["Independente Sul","ISU","#2a2f6b",2],
+ ["Araucária FC","ARA","#0d6b5f",2],["Vitória do Norte","VNO","#a01b45",2],
+ ["Portuário Bahia","PBA","#12718f",2],["Serra Dourada EC","SDO","#b58a12",1],
+ ["Aliança Caipira","ACA","#6b4f1f",1],["Juventude Amazônica","JAM","#1f8f3a",1]
+];
+
+// Quantidade de jogadores por posição num elenco de 22
+const ELENCO_BASE = {GOL:3, ZAG:5, LAT:4, VOL:4, MEI:3, ATA:3};
+const POSICOES = ["GOL","ZAG","LAT","VOL","MEI","ATA"];
+
+/** Salário mensal a partir da força e idade. */
+function calcSalario(ovr, idade){
+  const base = Math.pow(ovr/10, 3.1) * 55;
+  const fatorIdade = idade<21 ? 0.7 : idade>33 ? 0.8 : 1;
+  return Math.round(base*fatorIdade/100)*100;
+}
+/** Valor de mercado a partir da força e idade. */
+function calcValor(ovr, idade){
+  const base = Math.pow(ovr/10, 4.1) * 900;
+  const pico = 1 - Math.abs(26-idade)*0.045;
+  return Math.max(30000, Math.round(base*clamp(pico,0.3,1)/1000)*1000);
+}
+
+/** Cria um jogador com força em torno de `nivel`. */
+function gerarJogador(pos, nivel){
+  const ovr = clamp(Math.round(nivel + rnd(-9,9)), 40, 90);
+  const idade = rnd(17,38);
+  return {
+    id: "p"+(J.seq++), nome: gerarNome(), pos, idade, ovr,
+    sal: calcSalario(ovr, idade), val: calcValor(ovr, idade),
+    amarelos:0, susp:0, lesao:0, jogos:0, gols:0
+  };
+}
+
+/** Cria os 20 times com 22 jogadores cada. */
+function gerarTimes(){
+  return CLUBES.map(([nome,sigla,cor,tam], i)=>{
+    const nivel = 52 + tam*5;               // times maiores têm elenco melhor
+    const t = {
+      id:i, nome, sigla, cor, tam,
+      cash: 3_000_000 + tam*4_500_000 + rnd(-800000,800000),
+      formacao:"4-4-2", titulares:[], reservas:[], jogadores:[],
+      pts:0,j:0,v:0,e:0,d:0,gp:0,gc:0
+    };
+    for(const pos of POSICOES)
+      for(let k=0;k<ELENCO_BASE[pos];k++) t.jogadores.push(gerarJogador(pos, nivel));
+    return t;
+  });
+}
+
+/* ------------------------------------------- 3) ESCALAÇÃO E FORÇA */
+const FORMACOES = {
+  "4-4-2":{GOL:1,ZAG:2,LAT:2,VOL:2,MEI:2,ATA:2},
+  "4-3-3":{GOL:1,ZAG:2,LAT:2,VOL:2,MEI:1,ATA:3},
+  "3-5-2":{GOL:1,ZAG:3,LAT:2,VOL:2,MEI:1,ATA:2}
+};
+// Pequenos bônus/penalidades por setor conforme a formação
+const EFEITO_FORM = {
+  "4-4-2":{def:1.00,mei:1.00,ata:1.00},
+  "4-3-3":{def:0.95,mei:0.98,ata:1.10},
+  "3-5-2":{def:0.93,mei:1.10,ata:1.00}
+};
+
+const jog = (t,id) => t.jogadores.find(p=>p.id===id);
+const apto = p => p.susp===0 && p.lesao===0;
+
+/** Monta a melhor escalação possível respeitando a formação. */
+function escalarAuto(t){
+  const need = FORMACOES[t.formacao];
+  const livres = t.jogadores.filter(apto).sort((a,b)=>b.ovr-a.ovr);
+  const usados = new Set(); const tit = [];
+  for(const pos of POSICOES){
+    let falta = need[pos];
+    for(const p of livres){
+      if(falta<=0) break;
+      if(!usados.has(p.id) && p.pos===pos){ usados.add(p.id); tit.push(p.id); falta--; }
+    }
+    // se faltar gente na posição, completa com o melhor disponível
+    for(const p of livres){
+      if(falta<=0) break;
+      if(!usados.has(p.id)){ usados.add(p.id); tit.push(p.id); falta--; }
+    }
+  }
+  t.titulares = tit;
+  t.reservas = livres.filter(p=>!usados.has(p.id)).map(p=>p.id).slice(0,7);
+}
+
+/** Garante que a escalação é válida (11 aptos); recompõe se preciso. */
+function validarEscalacao(t){
+  const ok = t.titulares.length===11 &&
+    t.titulares.every(id=>{ const p=jog(t,id); return p && apto(p); });
+  if(!ok) escalarAuto(t);
+}
+
+/** Força média de um setor dos titulares. */
+function forcaSetor(t, setor){
+  const grupos = {def:["GOL","ZAG","LAT"], mei:["VOL","MEI"], ata:["ATA"]};
+  const ps = t.titulares.map(id=>jog(t,id)).filter(p=>p && grupos[setor].includes(p.pos));
+  if(!ps.length) return 45;
+  const m = ps.reduce((s,p)=>s+p.ovr,0)/ps.length;
+  return m * EFEITO_FORM[t.formacao][setor];
+}
+/** Força geral do time escalado. */
+function forcaTime(t){
+  return forcaSetor(t,"def")*0.38 + forcaSetor(t,"mei")*0.32 + forcaSetor(t,"ata")*0.30;
+}
+/** Força média de todo o elenco (usada na tela de escolha). */
+const forcaElenco = t => t.jogadores.reduce((s,p)=>s+p.ovr,0)/t.jogadores.length;
+
+/* ------------------------------------------ 4) SIMULAÇÃO DE PARTIDA */
+const MANDO = 3.2; // bônus de força para o mandante
+
+/** Escolhe quem marcou o gol, com peso por posição. */
+function sorteiaGoleador(t){
+  const peso = {ATA:6,MEI:3.5,VOL:1.5,LAT:1,ZAG:1,GOL:0.02};
+  const ps = t.titulares.map(id=>jog(t,id)).filter(Boolean);
+  let total = ps.reduce((s,p)=>s+peso[p.pos],0), r = Math.random()*total;
+  for(const p of ps){ r -= peso[p.pos]; if(r<=0) return p; }
+  return ps[0];
+}
+/** Sorteia um jogador de linha (para cartão/lesão). */
+function sorteiaLinha(t){
+  const ps = t.titulares.map(id=>jog(t,id)).filter(p=>p && p.pos!=="GOL");
+  return sort(ps);
+}
+
+/**
+ * Gera os lances de um trecho da partida (minuto `ini` a `fim`).
+ * Retorna lista de eventos {min, txt, tipo, lado}.
+ */
+function gerarLances(A, B, ini, fim, placar){
+  const ev = [];
+  const fA = forcaTime(A)+MANDO, fB = forcaTime(B);
+  for(let m=ini;m<=fim;m++){
+    if(Math.random() > 0.155) continue;             // minuto sem lance
+    const casa = Math.random() < fA/(fA+fB);
+    const at = casa?A:B, df = casa?B:A, lado = casa?"A":"B";
+    const r = Math.random();
+    if(r < 0.62){                                   // chance de gol
+      const pAta = forcaSetor(at,"ata")*1.05, pDef = forcaSetor(df,"def");
+      const pGol = 0.30 * (pAta/(pAta+pDef)) * 2;
+      if(Math.random() < pGol){
+        const g = sorteiaGoleador(at); g.gols++;
+        placar[lado]++;
+        ev.push({min:m,tipo:"gol",lado,
+          txt:`<b class="g">GOL do ${at.nome}!</b> ${g.nome} (${g.pos}) balança a rede.`});
+      } else {
+        ev.push({min:m,tipo:"chance",lado,
+          txt:`${at.nome} chega com perigo, mas ${sort(["o goleiro salva","a bola vai para fora","a zaga corta"])}.`});
+      }
+    } else if(r < 0.84){                            // cartão
+      const p = sorteiaLinha(at);
+      if(!p) continue;
+      if(Math.random() < 0.08){
+        p.susp = 1; p.cartaoVermelho = true;
+        ev.push({min:m,tipo:"vermelho",lado,
+          txt:`<b class="r">CARTÃO VERMELHO</b> para ${p.nome} (${at.nome}). Fica fora da próxima rodada.`});
+      } else {
+        p.amarelos++;
+        let extra = "";
+        if(p.amarelos % 3 === 0){ p.susp = 1; extra = " Completa 3 amarelos e está suspenso."; }
+        ev.push({min:m,tipo:"amarelo",lado,
+          txt:`Cartão amarelo para ${p.nome} (${at.nome}).${extra}`});
+      }
+    } else if(r < 0.92){                            // lesão
+      const p = sorteiaLinha(at);
+      if(!p) continue;
+      p.lesao = rnd(1,4);
+      ev.push({min:m,tipo:"lesao",lado,
+        txt:`<b class="r">Lesão:</b> ${p.nome} (${at.nome}) sente e deve ficar fora por ${p.lesao} rodada(s).`});
+    } else {
+      ev.push({min:m,tipo:"neutro",lado,
+        txt:`${at.nome} troca passes e ${sort(["pressiona no campo adversário","tenta abrir pelos lados","segura a posse de bola"])}.`});
+    }
+  }
+  return ev;
+}
+
+/** Simula rapidamente uma partida entre dois times (sem narração). */
+function simularRapido(A, B){
+  validarEscalacao(A); validarEscalacao(B);
+  const fA = forcaTime(A)+MANDO, fB = forcaTime(B);
+  const golsDe = (f,o) => {
+    const lam = clamp(1.35 * Math.pow(f/o, 2.2), 0.25, 4.2);
+    let g=0; for(let i=0;i<6;i++) if(Math.random() < lam/3) g++;
+    return g;
+  };
+  return [golsDe(fA,fB), golsDe(fB,fA)];
+}
+
+/* --------------------------------------- 5) CAMPEONATO E FINANÇAS */
+/** Tabela de 38 rodadas (ida e volta) pelo método do círculo. */
+function gerarTabela(nTimes){
+  const ids = [...Array(nTimes).keys()];
+  const rodadas = [];
+  const n = nTimes, meio = n/2;
+  let lista = ids.slice();
+  for(let r=0;r<n-1;r++){
+    const jogos = [];
+    for(let i=0;i<meio;i++){
+      const a = lista[i], b = lista[n-1-i];
+      jogos.push(r%2===0 ? [a,b] : [b,a]);
+    }
+    rodadas.push(jogos);
+    lista = [lista[0], lista[n-1], ...lista.slice(1,n-1)];
+  }
+  const volta = rodadas.map(j=>j.map(([a,b])=>[b,a]));
+  return rodadas.concat(volta);
+}
+
+/** Inicia um novo jogo escolhendo o time do usuário. */
+function novoJogo(){
+  J = { seq:1, temporada:2026, rodada:0, meuTime:null, times:[], tabela:[],
+        resultados:[], caixaHist:[], fimTemporada:false, log:[] };
+  J.times = gerarTimes();
+  J.tabela = gerarTabela(20);
+  J.times.forEach(escalarAuto);
+}
+
+/** Classificação ordenada. */
+function classificacao(){
+  return J.times.slice().sort((a,b)=>
+    b.pts-a.pts || (b.v-a.v) || ((b.gp-b.gc)-(a.gp-a.gc)) || (b.gp-a.gp) ||
+    a.nome.localeCompare(b.nome));
+}
+const posicaoDe = id => classificacao().findIndex(t=>t.id===id)+1;
+
+/** Aplica um resultado na tabela de classificação. */
+function aplicarResultado(A,B,gA,gB){
+  A.j++;B.j++;A.gp+=gA;A.gc+=gB;B.gp+=gB;B.gc+=gA;
+  if(gA>gB){A.v++;A.pts+=3;B.d++;}
+  else if(gB>gA){B.v++;B.pts+=3;A.d++;}
+  else {A.e++;B.e++;A.pts++;B.pts++;}
+  A.titulares.forEach(id=>{const p=jog(A,id); if(p) p.jogos++;});
+  B.titulares.forEach(id=>{const p=jog(B,id); if(p) p.jogos++;});
+}
+
+/** Receita de bilheteria do mandante. */
+const bilheteria = t => 180000 + t.tam*220000 + rnd(-40000,90000);
+
+/** Desconta salários e credita bilheteria ao fim da rodada. */
+function fecharRodadaFinanceiro(jogos){
+  for(const [ca,fo] of jogos){
+    const A = J.times[ca], B = J.times[fo];
+    const folhaA = A.jogadores.reduce((s,p)=>s+p.sal,0)/4;   // salário semanal
+    const folhaB = B.jogadores.reduce((s,p)=>s+p.sal,0)/4;
+    const renda = bilheteria(A);
+    A.cash += renda - folhaA;
+    B.cash -= folhaB;
+    if(A.id===J.meuTime) J.ultRenda = renda;
+    if(A.id===J.meuTime||B.id===J.meuTime) J.ultFolha = A.id===J.meuTime?folhaA:folhaB;
+  }
+}
+
+/** Reduz suspensões e lesões de todos os times. */
+function passarSemana(){
+  for(const t of J.times)
+    for(const p of t.jogadores){
+      if(p.susp>0) p.susp--;
+      if(p.lesao>0) p.lesao--;
+      p.cartaoVermelho = false;
+    }
+}
+
+/** Simula todas as partidas da rodada, exceto a do usuário. */
+function simularOutros(gA,gB){
+  const jogos = J.tabela[J.rodada];
+  const res = [];
+  for(const [ca,fo] of jogos){
+    const A = J.times[ca], B = J.times[fo];
+    let x,y;
+    if(ca===J.meuTime || fo===J.meuTime){ x=gA; y=gB; }
+    else { [x,y] = simularRapido(A,B); }
+    aplicarResultado(A,B,x,y);
+    res.push({ca,fo,gA:x,gB:y});
+  }
+  fecharRodadaFinanceiro(jogos);
+  J.resultados[J.rodada] = res;
+  J.rodada++;
+  passarSemana();
+  J.times.forEach(t=>{ if(t.id!==J.meuTime) escalarAuto(t); });
+  validarEscalacao(meu());
+  J.caixaHist.push(meu().cash);
+  if(J.rodada>=38) encerrarTemporada();
+}
+
+/** Premiação e fim de temporada. */
+function encerrarTemporada(){
+  const cl = classificacao();
+  cl.forEach((t,i)=>{ t.cash += Math.max(1_500_000, 26_000_000 - i*1_100_000); });
+  J.fimTemporada = true;
+  J.campeao = cl[0].nome;
+  J.rebaixados = cl.slice(16).map(t=>t.nome);
+  J.minhaPos = posicaoDe(J.meuTime);
+}
+
+/** Recomeça o campeonato mantendo elencos (nova temporada). */
+function novaTemporada(){
+  J.temporada++; J.rodada=0; J.fimTemporada=false;
+  J.resultados=[]; J.caixaHist=[];
+  J.tabela = gerarTabela(20);
+  for(const t of J.times){
+    t.pts=t.j=t.v=t.e=t.d=t.gp=t.gc=0;
+    for(const p of t.jogadores){
+      p.idade++; p.amarelos=0; p.susp=0; p.lesao=0; p.jogos=0; p.gols=0;
+      // evolução simples: jovens sobem, veteranos caem
+      p.ovr = clamp(p.ovr + (p.idade<24?rnd(0,3): p.idade>32?rnd(-4,0):rnd(-1,2)),40,92);
+      p.sal = calcSalario(p.ovr,p.idade); p.val = calcValor(p.ovr,p.idade);
+    }
+    // aposentadorias: substitui quem passou de 38
+    t.jogadores = t.jogadores.map(p => p.idade>38 ? gerarJogador(p.pos, 55+t.tam*4) : p);
+    escalarAuto(t);
+  }
+  tela="painel"; render();
+}
+
+const meu = () => J.times[J.meuTime];
+const folhaMensal = t => t.jogadores.reduce((s,p)=>s+p.sal,0);
+
+/** Próximo confronto do usuário. */
+function proximoJogo(){
+  if(J.rodada>=38) return null;
+  const j = J.tabela[J.rodada].find(([a,b])=>a===J.meuTime||b===J.meuTime);
+  return { casa:J.times[j[0]], fora:J.times[j[1]], mando:j[0]===J.meuTime };
+}
+
+/* -------------------------------------------- 6) SALVAR / CARREGAR */
+function salvarJogo(){
+  try{
+    localStorage.setItem(CHAVE_SAVE, JSON.stringify({J,tela}));
+    alerta("Jogo salvo no navegador.");
+  }catch(e){ alerta("Não foi possível salvar: "+e.message); }
+}
+function carregarJogo(){
+  try{
+    const raw = localStorage.getItem(CHAVE_SAVE);
+    if(!raw){ alerta("Nenhum jogo salvo encontrado."); return; }
+    const d = JSON.parse(raw);
+    J = d.J; tela = d.tela==="partida" ? "painel" : d.tela;
+    render(); alerta("Jogo carregado.");
+  }catch(e){ alerta("Save inválido: "+e.message); }
+}
+function trocarTema(){
+  const h = document.documentElement;
+  const novo = h.getAttribute("data-tema")==="escuro" ? "claro" : "escuro";
+  h.setAttribute("data-tema", novo);
+  try{ localStorage.setItem(CHAVE_SAVE+"-tema", novo); }catch(e){}
+}
+(function temaInicial(){
+  try{ const t=localStorage.getItem(CHAVE_SAVE+"-tema");
+    if(t) document.documentElement.setAttribute("data-tema",t);
+  }catch(e){}
+})();
+function alerta(msg){ ui.msg = msg; render(); setTimeout(()=>{ui.msg=null;},10); }
+
+/* ------------------------------------------------- 6) INTERFACE */
+const TELAS = [["painel","Painel"],["elenco","Elenco"],["escalacao","Escalação"],
+  ["tabela","Classificação"],["mercado","Mercado"],["financas","Finanças"]];
+
+function render(){
+  const app = document.getElementById("app");
+  const nav = document.getElementById("nav");
+  const hd  = document.getElementById("hdInfo");
+
+  if(!J || J.meuTime===null){
+    nav.innerHTML = ""; hd.textContent = "";
+    app.innerHTML = telaEscolha(); return;
+  }
+  hd.innerHTML = `${esc(meu().nome)} · Rodada ${Math.min(J.rodada+1,38)}/38 · `+
+    `<b class="${meu().cash<0?'neg':''}">${dinheiro(meu().cash)}</b>`;
+  nav.innerHTML = TELAS.map(([k,n])=>
+    `<button class="peq ${tela===k?'on':''}" onclick="irPara('${k}')">${n}</button>`).join("");
+
+  const mapa = {painel:telaPainel, elenco:telaElenco, escalacao:telaEscalacao,
+    tabela:telaTabela, mercado:telaMercado, financas:telaFinancas, partida:telaPartida};
+  app.innerHTML = (mapa[tela]||telaPainel)();
+  if(tela==="partida"){ const n=document.getElementById("narra"); if(n) n.scrollTop=n.scrollHeight; }
+}
+function irPara(t){ tela=t; ui.sel=null; render(); }
+
+/* --- Tela 1: escolha do time --- */
+function telaEscolha(){
+  if(!J) novoJogo();
+  const linhas = J.times.map(t=>`
+    <tr>
+      <td><span class="pill" style="background:${t.cor}">${t.sigla}</span> ${esc(t.nome)}</td>
+      <td class="num">${forcaElenco(t).toFixed(1)}</td>
+      <td class="num">${dinheiro(t.cash)}</td>
+      <td class="num">${"★".repeat(t.tam)}</td>
+      <td><button class="pri peq" onclick="escolherTime(${t.id})">Assumir</button></td>
+    </tr>`).join("");
+  return `<div class="card">
+    <h1>Escolha seu clube</h1>
+    <p class="dim">Você assume como técnico de um clube da Série A fictícia.
+    Times mais fortes têm elenco melhor; times menores são o desafio maior.</p>
+    <div class="rol"><table><thead><tr><th>Clube</th><th class="num">Força média</th>
+      <th class="num">Caixa</th><th class="num">Porte</th><th></th></tr></thead>
+      <tbody>${linhas}</tbody></table></div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      <button onclick="regerar()">Gerar outros clubes</button>
+      <button onclick="carregarJogo()">Carregar jogo salvo</button>
+    </div></div>`;
+}
+function regerar(){ novoJogo(); render(); }
+function escolherTime(id){
+  J.meuTime = id; escalarAuto(meu()); J.caixaHist=[meu().cash];
+  tela="painel"; render();
+}
+
+/* --- Tela 2: painel --- */
+function telaPainel(){
+  const p = proximoJogo();
+  const cl = classificacao();
+  const pos = posicaoDe(J.meuTime);
+  const meuT = meu();
+  const resumo = cl.slice(Math.max(0,pos-4), Math.max(0,pos-4)+7);
+
+  if(J.fimTemporada) return telaFimTemporada();
+
+  return `
+  ${meuT.cash<0?`<div class="aviso">Atenção: seu caixa está negativo (${dinheiro(meuT.cash)}). Venda jogadores ou reduza a folha.</div><br>`:""}
+  <div class="grid">
+    <div class="card">
+      <h2>Próxima partida</h2>
+      ${p?`<p><b>${esc(p.casa.nome)}</b> x <b>${esc(p.fora.nome)}</b></p>
+      <p class="dim">Rodada ${J.rodada+1} · você joga ${p.mando?"em casa":"fora"}</p>
+      <p class="dim">Força escalada: ${forcaTime(meuT).toFixed(1)} ·
+        Def ${forcaSetor(meuT,"def").toFixed(0)} /
+        Mei ${forcaSetor(meuT,"mei").toFixed(0)} /
+        Ata ${forcaSetor(meuT,"ata").toFixed(0)}</p>
+      <button class="pri" onclick="iniciarPartida()">Jogar partida</button>
+      <button onclick="irPara('escalacao')">Ver escalação</button>`
+      :"<p>Temporada encerrada.</p>"}
+    </div>
+    <div class="card">
+      <h2>Situação</h2>
+      <p>Posição: <b>${pos}º</b> · ${meuT.pts} pts em ${meuT.j} jogos</p>
+      <p>Caixa: <b class="${meuT.cash<0?'neg':''}">${dinheiro(meuT.cash)}</b></p>
+      <p>Folha mensal: ${dinheiro(folhaMensal(meuT))}</p>
+      <p>Desfalques: ${meuT.jogadores.filter(x=>!apto(x)).length}</p>
+      <div class="barra"><i style="width:${(J.rodada/38*100).toFixed(0)}%"></i></div>
+      <p class="dim">${J.rodada} de 38 rodadas disputadas</p>
+    </div>
+  </div>
+  <div class="card">
+    <h2>Classificação (resumo)</h2>
+    <div class="rol"><table><thead><tr><th>#</th><th>Time</th><th class="num">P</th>
+      <th class="num">J</th><th class="num">SG</th></tr></thead><tbody>
+      ${resumo.map(t=>`<tr class="${t.id===J.meuTime?'sel':''}">
+        <td>${posicaoDe(t.id)}</td><td>${esc(t.nome)}</td>
+        <td class="num"><b>${t.pts}</b></td><td class="num">${t.j}</td>
+        <td class="num">${t.gp-t.gc}</td></tr>`).join("")}
+    </tbody></table></div>
+    <button class="peq" onclick="irPara('tabela')">Tabela completa</button>
+  </div>
+  ${ultimaRodadaHTML()}`;
+}
+function ultimaRodadaHTML(){
+  const r = J.resultados[J.rodada-1];
+  if(!r) return "";
+  return `<div class="card"><h3>Resultados da rodada ${J.rodada}</h3>
+    <div class="rol"><table><tbody>${r.map(x=>`<tr>
+      <td>${esc(J.times[x.ca].nome)}</td><td class="num"><b>${x.gA} x ${x.gB}</b></td>
+      <td>${esc(J.times[x.fo].nome)}</td></tr>`).join("")}</tbody></table></div></div>`;
+}
+
+/* --- Tela 3: elenco --- */
+function telaElenco(){
+  const ordem = ui.ordem || {campo:"ovr", desc:true};
+  const ordemPos = {GOL:0,ZAG:1,LAT:2,VOL:3,MEI:4,ATA:5};
+  const ps = meu().jogadores.slice().sort((a,b)=>{
+    let va=a[ordem.campo], vb=b[ordem.campo];
+    if(ordem.campo==="pos"){ va=ordemPos[a.pos]; vb=ordemPos[b.pos]; }
+    if(ordem.campo==="nome") return ordem.desc? b.nome.localeCompare(a.nome): a.nome.localeCompare(b.nome);
+    return ordem.desc ? vb-va : va-vb;
+  });
+  const th = (c,n,cls="") => `<th class="${cls}" onclick="ordenar('${c}')">${n}${ordem.campo===c?(ordem.desc?" ▼":" ▲"):""}</th>`;
+  return `<div class="card"><h2>Elenco (${ps.length} jogadores)</h2>
+   <div class="rol"><table><thead><tr>
+     ${th("pos","Pos")}${th("nome","Jogador")}${th("idade","Idade","num")}
+     ${th("ovr","Força","num")}${th("sal","Salário","num")}${th("val","Valor","num")}
+     ${th("jogos","J","num")}${th("gols","G","num")}<th>Situação</th>
+   </tr></thead><tbody>
+   ${ps.map(p=>`<tr>
+     <td><b>${p.pos}</b></td><td>${esc(p.nome)}</td><td class="num">${p.idade}</td>
+     <td class="num"><b>${p.ovr}</b></td><td class="num">${dinheiro(p.sal)}</td>
+     <td class="num">${dinheiro(p.val)}</td><td class="num">${p.jogos}</td>
+     <td class="num">${p.gols}</td>
+     <td>${p.lesao?`<span class="r">Lesão ${p.lesao}r</span>`:
+        p.susp?`<span class="r">Suspenso</span>`:
+        `<span class="dim">Ok${p.amarelos?` · ${p.amarelos}A`:""}</span>`}</td>
+   </tr>`).join("")}
+   </tbody></table></div>
+   <p class="legenda">Toque no título da coluna para ordenar.</p></div>`;
+}
+function ordenar(c){
+  const o = ui.ordem || {campo:"ovr",desc:true};
+  ui.ordem = o.campo===c ? {campo:c,desc:!o.desc} : {campo:c,desc:true};
+  render();
+}
+
+/* --- Tela 4: escalação --- */
+function telaEscalacao(){
+  const t = meu();
+  const need = FORMACOES[t.formacao];
+  const tits = t.titulares.map(id=>jog(t,id)).filter(Boolean);
+  const resto = t.jogadores.filter(p=>!t.titulares.includes(p.id));
+  const linha = (p, banco) => `
+    <div class="lin ${ui.sel===p.id?'sel':''}" onclick="clicarJogador('${p.id}')">
+      <b>${p.pos}</b><span style="flex:1">${esc(p.nome)}</span>
+      <span class="dim">${p.idade}a</span><b>${p.ovr}</b>
+      ${p.lesao?'<span class="r">LES</span>':p.susp?'<span class="r">SUS</span>':''}
+    </div>`;
+  return `<div class="card">
+    <h2>Escalação</h2>
+    <p>Formação:
+      ${Object.keys(FORMACOES).map(f=>
+        `<button class="peq ${t.formacao===f?'on':''}" onclick="mudarFormacao('${f}')">${f}</button>`).join(" ")}
+      <button class="peq pri" onclick="autoEscalar()">Escalação automática</button></p>
+    <p class="dim">Exigido: ${Object.entries(need).map(([k,v])=>`${v} ${k}`).join(", ")} ·
+      Força atual <b>${forcaTime(t).toFixed(1)}</b></p>
+  </div>
+  <div class="grid">
+    <div class="card"><h3>Titulares (${tits.length}/11)</h3>
+      <div class="esq">${tits.map(p=>linha(p,false)).join("")}</div></div>
+    <div class="card"><h3>Reservas e restante do elenco</h3>
+      <div class="esq">${resto.map(p=>linha(p,true)).join("")}</div></div>
+  </div>
+  <p class="legenda">Toque num jogador e depois em outro para trocá-los de lugar.</p>`;
+}
+function mudarFormacao(f){ meu().formacao=f; escalarAuto(meu()); render(); }
+function autoEscalar(){ escalarAuto(meu()); render(); }
+/** Troca dois jogadores de lugar (titular <-> reserva ou entre titulares). */
+function clicarJogador(id){
+  const t = meu();
+  if(!ui.sel){ ui.sel = id; render(); return; }
+  if(ui.sel === id){ ui.sel=null; render(); return; }
+  const a = ui.sel, b = id;
+  const ia = t.titulares.indexOf(a), ib = t.titulares.indexOf(b);
+  if(ia>=0 && ib>=0){ t.titulares[ia]=b; t.titulares[ib]=a; }
+  else if(ia>=0){
+    const p = jog(t,b);
+    if(!apto(p)){ ui.sel=null; alerta("Jogador indisponível (lesão ou suspensão)."); return; }
+    t.titulares[ia]=b;
+  } else if(ib>=0){
+    const p = jog(t,a);
+    if(!apto(p)){ ui.sel=null; alerta("Jogador indisponível (lesão ou suspensão)."); return; }
+    t.titulares[ib]=a;
+  }
+  ui.sel=null; render();
+}
+
+/* --- Tela 5: partida --- */
+let P = null; // estado da partida em andamento
+
+function iniciarPartida(){
+  const pj = proximoJogo();
+  validarEscalacao(meu());
+  if(meu().titulares.length<11){ alerta("Escale 11 jogadores antes de jogar."); return; }
+  P = { A:pj.casa, B:pj.fora, placar:{A:0,B:0}, min:0, ev:[], fase:"1t",
+        subs:0, lances:null, idx:0, fim:false };
+  P.lances = gerarLances(P.A,P.B,1,45,P.placar);
+  tela="partida"; render();
+}
+
+/** Avança a narração em blocos de minutos. */
+function avancar(){
+  const passo = 9;
+  const limite = P.fase==="1t" ? 45 : 90;
+  P.min = Math.min(P.min+passo, limite);
+  while(P.idx < P.lances.length && P.lances[P.idx].min <= P.min){
+    P.ev.push(P.lances[P.idx++]);
+  }
+  if(P.min>=limite){
+    if(P.fase==="1t"){ P.fase="intervalo"; P.ev.push({min:45,tipo:"neutro",txt:"<b>Fim do primeiro tempo.</b>"}); }
+    else { finalizarPartida(); }
+  }
+  render();
+}
+function iniciarSegundoTempo(){
+  P.fase="2t"; P.min=45; P.idx=0;
+  P.lances = gerarLances(P.A,P.B,46,90,P.placar);
+  P.ev.push({min:46,tipo:"neutro",txt:"<b>Começa o segundo tempo.</b>"});
+  render();
+}
+function finalizarPartida(){
+  P.fim = true;
+  P.ev.push({min:90,tipo:"neutro",
+    txt:`<b>Fim de jogo: ${P.A.nome} ${P.placar.A} x ${P.placar.B} ${P.B.nome}</b>`});
+  simularOutros(P.placar.A, P.placar.B);
+}
+
+function telaPartida(){
+  const podeSub = (P.fase==="intervalo"||P.fase==="2t") && P.subs<3 && !P.fim;
+  return `<div class="card">
+    <h2 style="text-align:center">${esc(P.A.nome)} <span class="dim">x</span> ${esc(P.B.nome)}</h2>
+    <div class="placar">${P.placar.A} — ${P.placar.B}</div>
+    <p style="text-align:center" class="dim">${P.fim?"Encerrado":P.fase==="intervalo"?"Intervalo":`${P.min}'`} ·
+      substituições usadas: ${P.subs}/3</p>
+    <div class="narra" id="narra">
+      ${P.ev.map(e=>`<div><span class="min">${e.min}'</span>${e.txt}</div>`).join("") ||
+        '<div class="dim">A bola vai rolar…</div>'}
+    </div>
+    <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+      ${P.fim
+        ? `<button class="pri" onclick="irPara('painel')">Voltar ao painel</button>
+           <button onclick="irPara('tabela')">Ver classificação</button>`
+        : P.fase==="intervalo"
+          ? `<button class="pri" onclick="iniciarSegundoTempo()">Começar 2º tempo</button>
+             ${Object.keys(FORMACOES).map(f=>`<button class="peq ${P.A.id===J.meuTime?(P.A.formacao===f?'on':''):(P.B.formacao===f?'on':''}')}" onclick="formacaoIntervalo('${f}')">${f}</button>`).join("")}`
+          : `<button class="pri" onclick="avancar()">Avançar ${P.fase==="1t"?"":"jogo"}</button>
+             <button onclick="jogarTudo()">Jogar até o fim</button>`}
+    </div>
+    ${podeSub?painelSubs():""}
+  </div>`;
+}
+function formacaoIntervalo(f){ meu().formacao=f; escalarAuto(meu()); render(); }
+function jogarTudo(){
+  let guarda=0;
+  while(!P.fim && guarda++<60){
+    if(P.fase==="intervalo") iniciarSegundoTempo();
+    else avancar();
+  }
+  render();
+}
+function painelSubs(){
+  const t = meu();
+  const dentro = t.titulares.map(id=>jog(t,id)).filter(Boolean);
+  const fora = t.jogadores.filter(p=>!t.titulares.includes(p.id) && apto(p));
+  return `<div class="card" style="margin-top:12px">
+    <h3>Substituições (${P.subs}/3)</h3>
+    <div class="grid">
+      <div><h4 class="dim">Sai</h4><div class="esq">
+        ${dentro.map(p=>`<div class="lin ${ui.sai===p.id?'sel':''}" onclick="marcarSai('${p.id}')">
+          <b>${p.pos}</b><span style="flex:1">${esc(p.nome)}</span><b>${p.ovr}</b></div>`).join("")}
+      </div></div>
+      <div><h4 class="dim">Entra</h4><div class="esq">
+        ${fora.map(p=>`<div class="lin" onclick="fazerSub('${p.id}')">
+          <b>${p.pos}</b><span style="flex:1">${esc(p.nome)}</span><b>${p.ovr}</b></div>`).join("")}
+      </div></div>
+    </div></div>`;
+}
+function marcarSai(id){ ui.sai=id; render(); }
+function fazerSub(idEntra){
+  if(!ui.sai){ alerta("Escolha primeiro quem sai."); return; }
+  if(P.subs>=3){ alerta("Você já usou as 3 substituições."); return; }
+  const t = meu();
+  const i = t.titulares.indexOf(ui.sai);
+  if(i<0){ ui.sai=null; render(); return; }
+  const sai = jog(t,ui.sai), entra = jog(t,idEntra);
+  t.titulares[i] = idEntra;
+  P.subs++; ui.sai=null;
+  P.ev.push({min:Math.max(P.min,45),tipo:"neutro",
+    txt:`<b>Substituição:</b> sai ${sai.nome}, entra ${entra.nome}.`});
+  render();
+}
+
+/* --- Tela 6: classificação --- */
+function telaTabela(){
+  const cl = classificacao();
+  return `<div class="card"><h2>Classificação · Temporada ${J.temporada}</h2>
+  <div class="rol"><table><thead><tr><th>#</th><th>Time</th>
+    <th class="num">P</th><th class="num">J</th><th class="num">V</th><th class="num">E</th>
+    <th class="num">D</th><th class="num">GP</th><th class="num">GC</th><th class="num">SG</th>
+  </tr></thead><tbody>
+  ${cl.map((t,i)=>{
+    const zona = i===0?"zt": i<6?"zl": i>=16?"zr":"";
+    return `<tr class="${zona} ${t.id===J.meuTime?'sel':''}">
+      <td>${i+1}</td>
+      <td><span class="pill" style="background:${t.cor}">${t.sigla}</span> ${esc(t.nome)}</td>
+      <td class="num"><b>${t.pts}</b></td><td class="num">${t.j}</td><td class="num">${t.v}</td>
+      <td class="num">${t.e}</td><td class="num">${t.d}</td><td class="num">${t.gp}</td>
+      <td class="num">${t.gc}</td><td class="num">${t.gp-t.gc}</td></tr>`;
+  }).join("")}
+  </tbody></table></div>
+  <p class="legenda">Barra verde = título · azul = Libertadores (2º ao 6º) · vermelha = rebaixamento (17º ao 20º)</p>
+  </div>`;
+}
+
+/* --- Tela 7: mercado --- */
+function telaMercado(){
+  const t = meu();
+  const filtro = ui.filtroPos || "TODAS";
+  let lista = [];
+  for(const o of J.times){
+    if(o.id===J.meuTime) continue;
+    for(const p of o.jogadores) lista.push({p, dono:o});
+  }
+  if(filtro!=="TODAS") lista = lista.filter(x=>x.p.pos===filtro);
+  lista.sort((a,b)=>b.p.ovr-a.p.ovr);
+  lista = lista.slice(0,60);
+
+  return `<div class="card">
+    <h2>Mercado de transferências</h2>
+    <p>Caixa: <b class="${t.cash<0?'neg':''}">${dinheiro(t.cash)}</b> ·
+       Elenco: ${t.jogadores.length} (mín. 16, máx. 28)</p>
+    <p>${["TODAS",...POSICOES].map(f=>
+      `<button class="peq ${filtro===f?'on':''}" onclick="filtrarPos('${f}')">${f}</button>`).join(" ")}</p>
+  </div>
+  <div class="card"><h3>Comprar</h3>
+   <div class="rol"><table><thead><tr><th>Pos</th><th>Jogador</th><th>Clube</th>
+     <th class="num">Idade</th><th class="num">Força</th><th class="num">Salário</th>
+     <th class="num">Preço</th><th></th></tr></thead><tbody>
+   ${lista.map(({p,dono})=>`<tr>
+     <td><b>${p.pos}</b></td><td>${esc(p.nome)}</td><td class="dim">${dono.sigla}</td>
+     <td class="num">${p.idade}</td><td class="num"><b>${p.ovr}</b></td>
+     <td class="num">${dinheiro(p.sal)}</td><td class="num">${dinheiro(p.val)}</td>
+     <td><button class="peq ${t.cash>=p.val?'pri':''}" ${t.cash<p.val?'disabled':''}
+       onclick="comprar(${dono.id},'${p.id}')">Comprar</button></td></tr>`).join("")}
+   </tbody></table></div></div>
+  <div class="card"><h3>Vender (recebe 90% do valor)</h3>
+   <div class="rol"><table><thead><tr><th>Pos</th><th>Jogador</th><th class="num">Idade</th>
+     <th class="num">Força</th><th class="num">Recebe</th><th></th></tr></thead><tbody>
+   ${t.jogadores.slice().sort((a,b)=>b.val-a.val).map(p=>`<tr>
+     <td><b>${p.pos}</b></td><td>${esc(p.nome)}</td><td class="num">${p.idade}</td>
+     <td class="num"><b>${p.ovr}</b></td><td class="num">${dinheiro(p.val*0.9)}</td>
+     <td><button class="peq" onclick="vender('${p.id}')">Vender</button></td></tr>`).join("")}
+   </tbody></table></div></div>`;
+}
+function filtrarPos(f){ ui.filtroPos=f; render(); }
+function comprar(donoId,pid){
+  const t = meu(), dono = J.times[donoId];
+  const p = jog(dono,pid);
+  if(!p) return;
+  if(t.cash < p.val){ alerta("Caixa insuficiente."); return; }
+  if(t.jogadores.length>=28){ alerta("Elenco cheio (máximo 28)."); return; }
+  if(dono.jogadores.length<=16){ alerta(`${dono.nome} não pode vender: elenco mínimo.`); return; }
+  dono.jogadores = dono.jogadores.filter(x=>x.id!==pid);
+  dono.titulares = dono.titulares.filter(x=>x!==pid);
+  escalarAuto(dono);
+  t.cash -= p.val; dono.cash += p.val;
+  t.jogadores.push(p);
+  alerta(`${p.nome} contratado por ${dinheiro(p.val)}.`);
+}
+function vender(pid){
+  const t = meu(); const p = jog(t,pid);
+  if(!p) return;
+  if(t.jogadores.length<=16){ alerta("Elenco mínimo de 16 jogadores."); return; }
+  const comprador = J.times.filter(o=>o.id!==t.id && o.cash>=p.val && o.jogadores.length<28);
+  const dono = comprador.length ? sort(comprador) : null;
+  if(!dono){ alerta("Nenhum clube tem caixa para esse jogador agora."); return; }
+  t.jogadores = t.jogadores.filter(x=>x.id!==pid);
+  t.titulares = t.titulares.filter(x=>x!==pid);
+  t.reservas = t.reservas.filter(x=>x!==pid);
+  dono.jogadores.push(p); dono.cash -= p.val;
+  t.cash += p.val*0.9;
+  validarEscalacao(t); escalarAuto(dono);
+  alerta(`${p.nome} vendido ao ${dono.nome} por ${dinheiro(p.val*0.9)}.`);
+}
+
+/* --- Tela 8: finanças --- */
+function telaFinancas(){
+  const t = meu();
+  const folha = folhaMensal(t);
+  const pos = posicaoDe(J.meuTime);
+  const premio = Math.max(1_500_000, 26_000_000 - (pos-1)*1_100_000);
+  return `<div class="card"><h2>Finanças</h2>
+    <div class="grid">
+      <div><p class="dim">Caixa atual</p>
+        <h1 class="${t.cash<0?'neg':''}">${dinheiro(t.cash)}</h1></div>
+      <div><p class="dim">Folha salarial mensal</p><h1>${dinheiro(folha)}</h1>
+        <p class="dim">Cobrança semanal: ${dinheiro(folha/4)} por rodada</p></div>
+    </div>
+    ${t.cash<0?`<div class="aviso">Caixa negativo. Venda jogadores ou dispense salários altos.</div>`:""}
+  </div>
+  <div class="card"><h3>Últimos lançamentos</h3>
+    <table><tbody>
+      <tr><td>Bilheteria (último jogo em casa)</td><td class="num">${dinheiro(J.ultRenda||0)}</td></tr>
+      <tr><td>Salários (última rodada)</td><td class="num neg">${dinheiro(-(J.ultFolha||folha/4))}</td></tr>
+      <tr><td>Premiação estimada (${pos}º lugar)</td><td class="num">${dinheiro(premio)}</td></tr>
+    </tbody></table>
+  </div>
+  <div class="card"><h3>Maiores salários do elenco</h3>
+    <div class="rol"><table><thead><tr><th>Jogador</th><th>Pos</th>
+      <th class="num">Força</th><th class="num">Salário</th></tr></thead><tbody>
+      ${t.jogadores.slice().sort((a,b)=>b.sal-a.sal).slice(0,10).map(p=>`<tr>
+        <td>${esc(p.nome)}</td><td><b>${p.pos}</b></td><td class="num">${p.ovr}</td>
+        <td class="num">${dinheiro(p.sal)}</td></tr>`).join("")}
+    </tbody></table></div></div>
+  <div class="card"><h3>Evolução do caixa</h3>
+    <p class="dim">${J.caixaHist.map(v=>dinheiro(v)).slice(-10).join(" → ") || "sem histórico"}</p></div>`;
+}
+
+/* --- Fim de temporada --- */
+function telaFimTemporada(){
+  const cl = classificacao();
+  return `<div class="card">
+    <h1>Fim da temporada ${J.temporada}</h1>
+    <p>Campeão: <b>${esc(J.campeao)}</b></p>
+    <p>Sua posição final: <b>${J.minhaPos}º</b> com ${meu().pts} pontos</p>
+    <p>Rebaixados: ${J.rebaixados.map(esc).join(", ")}</p>
+    <p>Caixa após premiação: <b>${dinheiro(meu().cash)}</b></p>
+    <button class="pri" onclick="novaTemporada()">Começar nova temporada</button>
+    <button onclick="irPara('tabela')">Ver classificação final</button>
+  </div>
+  <div class="card"><h3>Artilheiros do seu time</h3>
+    <table><tbody>${meu().jogadores.slice().sort((a,b)=>b.gols-a.gols).slice(0,5)
+      .map(p=>`<tr><td>${esc(p.nome)}</td><td class="num"><b>${p.gols}</b> gols</td></tr>`).join("")}
+    </tbody></table></div>`;
+}
+
+/* --------------------------------------------------- INICIALIZAÇÃO */
+novoJogo();
+render();
+</script>
+</body>
+</html>
