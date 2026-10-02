@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/integrations/supabase/client";
+import { neon, neonAuth } from "@/integrations/neon/client";
 
 export const Route = createFileRoute("/reset-password")({
   head: () => ({ meta: [
@@ -26,17 +26,26 @@ function ResetPassword() {
   const [ready, setReady] = useState(false);
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [token, setToken] = useState<string | null>(null);
 
   useEffect(() => {
-    const isRecovery = new URLSearchParams(window.location.hash.slice(1)).get("type") === "recovery";
-    void supabase.auth.getSession().then(({ data }) => setReady(isRecovery || Boolean(data.session)));
+    const params = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.slice(1));
+    const resetToken = params.get("token") ?? hashParams.get("token");
+    setToken(resetToken);
+    void neon.auth.getSession().then(({ data }) => setReady(Boolean(resetToken) || Boolean(data.session)));
   }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (password.length < 8 || password.length > 72) { toast.error("Use uma senha entre 8 e 72 caracteres."); return; }
     setBusy(true);
-    const { error } = await supabase.auth.updateUser({ password });
+    if (!token) {
+      setBusy(false);
+      toast.error("O link de recuperação expirou ou é inválido.");
+      return;
+    }
+    const { error } = await neonAuth.resetPassword({ newPassword: password, token });
     setBusy(false);
     if (error) { toast.error(error.message); return; }
     setDone(true);

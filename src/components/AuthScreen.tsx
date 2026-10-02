@@ -2,8 +2,7 @@ import { useState, type FormEvent } from "react";
 import { Check, Eye, EyeOff, LoaderCircle, LockKeyhole, Mail } from "lucide-react";
 import { toast } from "sonner";
 
-import { lovable } from "@/integrations/lovable";
-import { supabase } from "@/integrations/supabase/client";
+import { neonAuth } from "@/integrations/neon/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +16,8 @@ export function AuthScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [confirmationSent, setConfirmationSent] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState("");
+  const [confirmationCode, setConfirmationCode] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -33,29 +34,68 @@ export function AuthScreen() {
     setBusy(true);
     try {
       if (mode === "signup") {
-        const { data, error } = await supabase.auth.signUp({
+        const { data, error } = await neonAuth.signUp.email({
           email: normalizedEmail,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          name: normalizedEmail.split("@")[0] || "Técnico",
         });
-        if (error) throw error;
-        if (!data.session) {
+        if (error) {
+          const errStr = error.message?.toLowerCase() || "";
+          if (errStr.includes("already") || errStr.includes("exists") || errStr.includes("registered")) {
+            try {
+              await neonAuth.emailOtp.sendVerificationOtp({
+                email: normalizedEmail,
+                type: "email-verification",
+              });
+              setConfirmationEmail(normalizedEmail);
+              setConfirmationSent(true);
+              toast.info("Conta já cadastrada. Enviamos um código de confirmação para o seu e-mail.");
+              return;
+            } catch {
+              // Continua para mensagem padrão se falhar
+            }
+          }
+          throw error;
+        }
+
+        if (data?.user && !data.user.emailVerified) {
+          setConfirmationEmail(normalizedEmail);
           setConfirmationSent(true);
+          toast.success("Código de confirmação enviado para seu e-mail.");
           return;
         }
       } else if (mode === "forgot") {
-        const { error } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+        const { error } = await neonAuth.requestPasswordReset({
+          email: normalizedEmail,
           redirectTo: `${window.location.origin}/reset-password`,
         });
         if (error) throw error;
         toast.success("Enviamos o link para redefinir sua senha.");
         setMode("login");
       } else {
-        const { error } = await supabase.auth.signInWithPassword({
+        const { error } = await neonAuth.signIn.email({
           email: normalizedEmail,
           password,
         });
-        if (error) throw error;
+        if (error) {
+          const errStr = error.message?.toLowerCase() || "";
+          if (errStr.includes("verif") || errStr.includes("not verified")) {
+            try {
+              await neonAuth.emailOtp.sendVerificationOtp({
+                email: normalizedEmail,
+                type: "email-verification",
+              });
+              setConfirmationEmail(normalizedEmail);
+              setConfirmationSent(true);
+              toast.info("Seu e-mail ainda não foi verificado. Enviamos um código de confirmação.");
+              return;
+            } catch {
+              // Segue para erro padrão
+            }
+          }
+          throw error;
+        }
+        window.location.reload();
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : "Não foi possível continuar.";
@@ -65,12 +105,60 @@ export function AuthScreen() {
     }
   }
 
+  async function handleVerifyCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const token = confirmationCode.trim();
+    if (!/^\d{6}$/.test(token)) {
+      toast.error("Digite o código de 6 dígitos enviado para seu e-mail.");
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const { data, error } = await neonAuth.emailOtp.verifyEmail({
+        email: confirmationEmail,
+        otp: token,
+      });
+      if (error) throw error;
+      if (data?.session) {
+        window.location.reload();
+        return;
+      }
+      setConfirmationSent(false);
+      setConfirmationCode("");
+      toast.success("E-mail confirmado. Sua conta está pronta.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Não foi possível confirmar o código.";
+      toast.error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResendCode() {
+    setBusy(true);
+    try {
+      const { error } = await neonAuth.emailOtp.sendVerificationOtp({
+        email: confirmationEmail,
+        type: "email-verification",
+      });
+      if (error) throw error;
+      toast.success("Enviamos um novo código de confirmação.");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Não foi possível reenviar o código.";
+      toast.error(message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleGoogle() {
     setBusy(true);
-    const result = await lovable.auth.signInWithOAuth("google", {
-      redirect_uri: window.location.origin,
+    const { error } = await neonAuth.signIn.social({
+      provider: "google",
+      callbackURL: window.location.origin,
     });
-    if (result.error) toast.error(result.error.message);
+    if (error) toast.error(error.message);
     setBusy(false);
   }
 
@@ -82,8 +170,26 @@ export function AuthScreen() {
           <div className="auth-success"><Check aria-hidden="true" /></div>
           <p className="auth-kicker">Cadastro recebido</p>
           <h1>Confirme seu e-mail</h1>
-          <p>Enviamos um link para <strong>{email.trim()}</strong>. Abra-o para ativar sua conta Free.</p>
-          <Button className="w-full" onClick={() => { setConfirmationSent(false); setMode("login"); }}>
+          <p>Enviamos um código de 6 dígitos para <strong>{confirmationEmail}</strong>.</p>
+          <form onSubmit={handleVerifyCode} className="auth-form">
+            <div className="auth-field">
+              <Label htmlFor="confirmation-code">Código de confirmação</Label>
+              <Input
+                id="confirmation-code"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                pattern="[0-9]{6}"
+                maxLength={6}
+                value={confirmationCode}
+                onChange={(event) => setConfirmationCode(event.target.value.replace(/\D/g, ""))}
+                placeholder="000000"
+                required
+              />
+            </div>
+            <Button type="submit" className="w-full" disabled={busy}>{busy && <LoaderCircle className="animate-spin" />}Confirmar e-mail</Button>
+          </form>
+          <Button variant="link" className="auth-link" onClick={handleResendCode} disabled={busy}>Reenviar código</Button>
+          <Button variant="ghost" className="w-full" onClick={() => { setConfirmationSent(false); setMode("login"); }}>
             Voltar para entrar
           </Button>
         </section>

@@ -1,9 +1,12 @@
 import { createContext, useContext } from "react";
-import type { User } from "@supabase/supabase-js";
+export type AuthUser = {
+  id: string;
+  email: string | null;
+};
 
 export type AuthState = {
   loading: boolean;
-  user: User | null;
+  user: AuthUser | null;
 };
 
 export const AuthContext = createContext<AuthState>({ loading: true, user: null });

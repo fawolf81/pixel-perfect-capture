@@ -13,7 +13,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AuthContext, type AuthState } from "../lib/auth-context";
-import { supabase } from "../integrations/supabase/client";
+import { neon } from "../integrations/neon/client";
 import { Toaster } from "../components/ui/sonner";
 
 function NotFoundComponent() {
@@ -124,10 +124,13 @@ function RootComponent() {
 
   useEffect(() => {
     let active = true;
-    void supabase.auth.getUser().then(({ data }) => {
+    void neon.auth.getUser().then(({ data }) => {
       if (active) setAuth({ loading: false, user: data.user ?? null });
+    }).catch((error: unknown) => {
+      console.warn("Neon Auth session unavailable; continuing as signed out.", error);
+      if (active) setAuth({ loading: false, user: null });
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+    const { data: listener } = neon.auth.onAuthStateChange((event, session) => {
       if (event !== "SIGNED_IN" && event !== "SIGNED_OUT" && event !== "USER_UPDATED") return;
       setAuth({ loading: false, user: session?.user ?? null });
       void router.invalidate();
